@@ -1,11 +1,11 @@
-train: "./data/yolov7_seg_dataset/train/"
-val: "./data/yolov7_seg_dataset/val/"
+train: "/home/adriano/Desktop/avaltech/data_sets/cattle_detector/garsup/train/"
+val: "/home/adriano/Desktop/avaltech/data_sets/cattle_detector/garsup/val/"
 
 # number of classes
 nc: 1
 
 # class names
-names: ['raspberry pi']
+names: ['garupa']
 
 
 
