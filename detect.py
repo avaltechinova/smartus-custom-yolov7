@@ -30,6 +30,7 @@ import platform
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -40,11 +41,108 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
+from utils.augmentations import letterbox
 from utils.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, Profile, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
                            increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, smart_inference_mode
+
+
+@smart_inference_mode()
+def crop_rbg_and_depth_images(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
+                              source=None,
+                              data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
+                              device='',
+                              imgsz=(360, 480),
+                              augment=False,  # augmented inference
+                              visualize=False,  # visualize features
+                              conf_thres=0.25,  # confidence threshold
+                              iou_thres=0.45,  # NMS IOU threshold
+                              max_det=1000,  # maximum detections per image
+                              classes=None,
+                              agnostic_nms=False,  # class-agnostic NMS
+                              half=False,  # use FP16 half-precision inference
+                              dnn=False  # use OpenCV DNN for ONNX inference
+                              ):
+    if source is None:
+        raise ValueError('The source of images file names must be specified.')
+
+    img_paths = np.genfromtxt(source, dtype=str, delimiter=',')
+
+    # load model
+    device = select_device(device)
+    model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+    stride, names, pt = model.stride, model.names, model.pt
+    img_sz = check_img_size(imgsz, s=stride)  # check image size
+
+    # Run inference
+    model.warmup(imgsz=(1 if pt else bs, 3, *img_sz))  # warmup
+    seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
+
+    for img_path_pair in img_paths:
+        depth_img_file_name = img_path_pair[0]
+        rgb_img_file_name = img_path_pair[1]
+
+        save_depth_path = os.path.dirname(depth_img_file_name)
+        save_rgb_path = os.path.dirname(rgb_img_file_name)
+
+        save_depth_path = os.path.join(save_depth_path, 'crop')
+        save_rgb_path = os.path.join(save_rgb_path, 'crop')
+
+        rgb_img_file_basename = os.path.basename(rgb_img_file_name)
+        depth_img_file_basename = os.path.basename(depth_img_file_name)
+
+        # load images
+        depth_im0 = cv2.imread(depth_img_file_name)  # BGR
+        rgb_im0 = cv2.imread(rgb_img_file_name)  # BGR
+
+        assert depth_im0 is not None, f'Depth image Not Found {depth_im0}'
+        assert rgb_im0 is not None, f'RGB image Not Found {rgb_im0}'
+
+        rgb_im = letterbox(rgb_im0, img_sz, stride, auto=pt)[0]  # padded resize
+        rgb_im = rgb_im.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
+        rgb_im = np.ascontiguousarray(rgb_im)  # contiguous
+
+        with dt[0]:
+            # torch version of the rbg image
+            rgb_im = torch.from_numpy(rgb_im).to(device)
+            rgb_im = rgb_im.half() if model.fp16 else rgb_im.float()  # uint8 to fp16/32
+            rgb_im /= 255  # 0 - 255 to 0.0 - 1.0
+
+            if len(rgb_im.shape) == 3:
+                rgb_im = rgb_im[None]  # expand for batch dim
+
+        with dt[1]:
+            prediction = model(rgb_im, augment=augment, visualize=visualize)
+
+        # NMS
+        with dt[2]:
+            prediction = non_max_suppression(prediction,
+                                             conf_thres,
+                                             iou_thres,
+                                             classes,
+                                             agnostic_nms,
+                                             max_det=max_det)
+
+        # Process predictions
+        for i, det in enumerate(prediction):
+            rgb_imc = rgb_im0.copy()
+            depth_imc = depth_im0.copy()
+            if len(det):
+                # Rescale boxes from img_size to im0 size
+                det[:, :4] = scale_coords(rgb_im.shape[2:], det[:, :4], rgb_im0.shape).round()
+
+                # Write results
+                for *xyxy, conf, cls in reversed(det):
+                    # save rgb crop image
+                    save_one_box(xyxy, rgb_imc,
+                                 file=Path(os.path.join(save_rgb_path, rgb_img_file_basename)),
+                                 BGR=True)
+                    # save depth crop image
+                    save_one_box(xyxy, depth_imc,
+                                 file=Path(os.path.join(save_depth_path, depth_img_file_basename)),
+                                 BGR=True)
 
 
 @smart_inference_mode()
@@ -215,7 +313,7 @@ def parse_opt():
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'best.pt', help='model path(s)')
     parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='(optional) dataset.yaml path')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
+    parser.add_argument('--imgsz', '--img', '--img_size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
@@ -244,9 +342,27 @@ def parse_opt():
     return opt
 
 
-def main(opt):
+def main(param):
     check_requirements(exclude=('tensorboard', 'thop'))
-    run(**vars(opt))
+    crop = True
+    if crop:
+        crop_rbg_and_depth_images(param.weights,
+                                  param.source,
+                                  param.data,
+                                  param.device,
+                                  param.imgsz,
+                                  param.augment,
+                                  param.visualize,
+                                  param.conf_thres,
+                                  param.iou_thres,
+                                  param.max_det,
+                                  param.classes,
+                                  param.agnostic_nms,
+                                  param.half,
+                                  param.dnn
+                                  )
+    else:
+        run(**vars(param))
 
 
 if __name__ == "__main__":
