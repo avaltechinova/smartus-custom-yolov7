@@ -263,7 +263,6 @@ def run(
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
                         if names[c] == 'topo garupa':
-                            label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
                             annotator.point_label(xyxy, '', color=colors(0, True))
                         else:
                             label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
