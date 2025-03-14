@@ -67,6 +67,26 @@ def check_pil_font(font=FONT, size=10):
             return ImageFont.load_default()
 
 
+def get_rectangle_center(top_left, bottom_right):
+    """
+    Calculates the center point of a rectangle.
+
+    Parameters:
+        top_left (tuple): Coordinates of the top-left corner (x1, y1).
+        bottom_right (tuple): Coordinates of the bottom-right corner (x2, y2).
+
+    Returns:
+        tuple: Coordinates of the center point (cx, cy) as float or int.
+    """
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+
+    return round(cx), round(cy)  # Round to nearest pixel
+
+
 class Annotator:
     # YOLOv5 Annotator for train/val mosaics and jpgs and detect/hub inference annotations
     def __init__(self, im, line_width=None, font_size=None, font='Arial.ttf', pil=False, example='abc'):
@@ -81,6 +101,25 @@ class Annotator:
         else:  # use cv2
             self.im = im
         self.lw = line_width or max(round(sum(im.shape) / 2 * 0.003), 2)  # line width
+
+    def point_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
+        p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
+        cx, cy = get_rectangle_center(p1, p2)
+        cv2.circle(self.im, (cx, cy), radius=10, color=color, thickness=-1)
+
+        if label:
+            tf = max(self.lw - 1, 1)  # font thickness
+            w, h = cv2.getTextSize(label, 0, fontScale=self.lw / 3, thickness=tf)[0]  # text width, height
+            outside = p1[1] - h >= 3
+            p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+            cv2.rectangle(self.im, p1, p2, color, -1, cv2.LINE_AA)  # filled
+            cv2.putText(self.im,
+                        label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+                        0,
+                        self.lw / 3,
+                        txt_color,
+                        thickness=tf,
+                        lineType=cv2.LINE_AA)
 
     def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
         # Add one xyxy box to image with label

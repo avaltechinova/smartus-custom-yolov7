@@ -75,6 +75,7 @@ def crop_rbg_and_depth_images(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
     stride, names, pt = model.stride, model.names, model.pt
     img_sz = check_img_size(imgsz, s=stride)  # check image size
+    bs = 1
 
     # Run inference
     model.warmup(imgsz=(1 if pt else bs, 3, *img_sz))  # warmup
@@ -261,10 +262,15 @@ def run(
 
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
-                        label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
-                        annotator.box_label(xyxy, label, color=colors(c, True))
-                    if save_crop:
-                        save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                        if names[c] == 'topo garupa':
+                            label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                            annotator.point_label(xyxy, '', color=colors(0, True))
+                        else:
+                            label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                            annotator.box_label(xyxy, label, color=colors(c, True))
+
+                        if save_crop:
+                            save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
             # Stream results
             im0 = annotator.result()
@@ -344,7 +350,7 @@ def parse_opt():
 
 def main(param):
     check_requirements(exclude=('tensorboard', 'thop'))
-    crop = True
+    crop = False
     if crop:
         crop_rbg_and_depth_images(param.weights,
                                   param.source,

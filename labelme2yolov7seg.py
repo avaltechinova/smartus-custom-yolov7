@@ -6,7 +6,7 @@ import sys
 from sklearn.model_selection import train_test_split
 from os import path
 
-class_list = ["corsup"]
+class_list = ["corsup", "topo garupa"]
 
 
 def labelme_json_to_yolov7_seg(labelme_dataset_dir):

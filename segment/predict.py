@@ -490,10 +490,10 @@ def main(options):
 if __name__ == "__main__":
     seg_one = True
     if seg_one:
-        # segment_images(ROOT / 'best_tiny_garsup_092024.pt', data=ROOT / 'data/custom.yaml')
+        segment_images(ROOT / 'best_tiny_garsup_092024.pt', data=ROOT / 'data/custom.yaml')
         # opt = parse_opt()
         # main(opt)
-        run(ROOT / 'best.pt')
+        # run(ROOT / 'best.pt')
     else:
         prefix = '/home/adriano/Desktop/avaltech/data_sets/segmentation/corsup/'
         img_path_file = 'nova_esperanca_img_to_segment.csv'
